@@ -1,0 +1,220 @@
+---
+title: "SINABEF"
+author: '20221970'
+date: "2026-05-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objetivo: Este documento buscar filtrar la base SINADEF y, luego, calcular el ratio de muertes 2020/2019 por provincia. Finalmente, se respondera a la alternavis, ya sean falsas o verdaderes.
+
+# 1. Limpiar entorno de trabajo
+
+```{r}
+# Elimina todos los objetos almacenados en memoria
+rm(list = ls())
+```
+
+# 2. Fijar semilla
+
+```{r}
+# semilla para reproducibilidad
+set.seed(123)
+```
+
+# 3. Cargar Tydyverse
+
+```{r}
+# Librería 
+library(tidyverse)
+```
+
+# 4. Leer base de datos
+
+```{r}
+# Importa la base SINADEF
+datasucia = read.csv("SINADEF_DATOS_ABIERTOS.csv")
+```
+
+# 5. Explorar variables
+
+```{r}
+# Muestra nombres de columnas
+names(datasucia)
+```
+
+# 6. Filtrar años 2019 y 2020
+
+```{r}
+# Conserva únicamente registros de 2019 y 2020
+datafil = datasucia %>%
+  filter(ANIO %in% c(2019, 2020))
+```
+
+ #DATILLA FILTRADA
+```{r}
+datafil  =  datafil %>%
+  select(PROVINCIA_FALLECIMIENTO, ANIO)
+
+# Guarda este archivo reducido — es el que SÍ se sube a GitHub
+# (data original pero solo con las filas y columnas necesarias)
+write.csv(
+  datafil,
+  "SINADEF_filtrado.csv",
+  row.names = FALSE
+)
+
+```
+
+
+# 7. Agrupar muertes por provincia y año
+
+```{r}
+# Calcula total de muertes por provincia y año
+muertes = datafil %>%
+  group_by(PROVINCIA_FALLECIMIENTO, ANIO) %>%
+  summarise(
+    total = n(),
+    .groups = "drop"
+  )
+```
+
+```{r}
+head(muertes)
+```
+
+
+
+# 8. Convertir años en columnas
+
+```{r}
+# Convierte los años en columnas separadas
+muertes_wide = muertes %>%
+  pivot_wider(
+    names_from = ANIO,
+    values_from = total
+  )
+```
+
+# 9. Calcular ratio 2020/2019
+
+```{r}
+# Calcula ratio de muertes entre 2020 y 2019
+ratio_data = muertes_wide %>%
+  mutate(
+    ratio = `2020` / `2019`
+  )
+```
+
+
+```{r}
+# Demostrar si hay valores NA o Inf 
+sum(is.na(ratio_data$ratio)) 
+sum(is.infinite(ratio_data$ratio))  
+```
+
+
+# 10. Seleccionar variables finales
+
+```{r}
+# Conserva únicamente provincia y ratio
+final = ratio_data %>%
+  select(PROVINCIA_FALLECIMIENTO, ratio)
+```
+
+# 11. Visualizar resultados
+
+```{r}
+# primeras filas de resultados
+head(final)
+```
+
+# 12. Exportar archivo limpio
+
+```{r}
+# Guarda archivo final procesado
+write.csv(
+  final,
+  "ratio_muertes_provincia_2020_2019.csv",
+  row.names = FALSE
+)
+```
+
+
+#RPTA'S --> VERDADERO O FALSO
+
+
+## opcion 1: "Mientras que en Churcampa no varió la tasa de mortalidad, pero en Ocros ésta se duplicó
+"
+
+```{r alt1}
+# "Churcampa debería tener ratio ≈ 1.00"
+# "Ocros debería tener ratio ≈ 2.00 (duplicó)"
+alt1  = final %>%
+  filter(PROVINCIA_FALLECIMIENTO %in% c("CHURCAMPA", "OCROS"))
+
+print(alt1)
+
+# Evaluación automática de la alternativa
+churcampa_ratio  =  alt1 %>% filter(PROVINCIA_FALLECIMIENTO == "CHURCAMPA") %>% pull(ratio)
+ocros_ratio      = alt1 %>% filter(PROVINCIA_FALLECIMIENTO == "OCROS")     %>% pull(ratio)
+
+cat("Churcampa ratio:", round(churcampa_ratio, 3), "\n")
+cat("Ocros ratio:    ", round(ocros_ratio, 3), "\n")
+cat("¿Churcampa sin variación (ratio ≈ 1)?", isTRUE(abs(churcampa_ratio - 1) < 0.05), "\n")
+cat("¿Ocros se duplicó (ratio ≈ 2)?", isTRUE(abs(ocros_ratio - 2) < 0.05), "\n")
+```
+
+
+## opcion 2: "En 23 provincias la tasa, al menos, se duplicó"
+
+```{r alt2}
+# Hay que filtrar provincias donde el ratio es mayor o igual a 2
+provincias_duplicadas = final %>%
+  filter(ratio >= 2) %>%
+  arrange(desc(ratio))
+
+# Muestra cuántas provincias cumplen la condición
+cat("Provincias con ratio >= 2:", nrow(provincias_duplicadas), "\n")
+print(provincias_duplicadas)
+
+# Evaluación automática
+cat("¿Son exactamente 23 provincias?", nrow(provincias_duplicadas) == 23, "\n")
+```
+
+---
+
+## Alternativa 3: "Hay una sola provincia con tasa atípica: Datem del Marañón"
+
+```{r alt3}
+# Detectamos valores atípicos usando el criterio del boxplot: 
+# son atípicos los valores que superan Q3 + 1.5*IQR o están por debajo de Q1 - 1.5*IQR
+Q1   = quantile(final$ratio, 0.25, na.rm = TRUE)  # primer cuartil
+Q3 =  quantile(final$ratio, 0.75, na.rm = TRUE)  # tercer cuartil
+IQR_val =  Q3 - Q1                                    # rango intercuartílico
+
+# Límites para considerar un valor como atípico
+limite_superior  =  Q3 + 1.5 * IQR_val
+limite_inferior  =  Q1 - 1.5 * IQR_val
+
+cat("Límite inferior:", round(limite_inferior, 3), "\n")
+cat("Límite superior:", round(limite_superior, 3), "\n")
+
+# Filtra las provincias atípicas
+atipicos  = final %>%
+  filter(ratio > limite_superior | ratio < limite_inferior) %>%
+  arrange(desc(ratio))
+
+cat("Número de provincias atípicas:", nrow(atipicos), "\n")
+print(atipicos)
+
+# Verifica si hay solo una y si es Datem del Marañón
+cat("¿Es solo una provincia atípica?", nrow(atipicos) == 1, "\n")
+if (nrow(atipicos) == 1) {
+  cat("¿Es Datem del Marañón?", 
+      grepl("DATEM", atipicos$PROVINCIA_FALLECIMIENTO[1], ignore.case = TRUE), "\n")
+}
+```
